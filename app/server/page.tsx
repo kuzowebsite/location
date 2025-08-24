@@ -43,8 +43,7 @@ import {
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import GoogleMap from "@/components/google-map"
-import { database } from "@/lib/firebase"
-import { ref, set, get, remove, onValue } from "firebase/database"
+import { database, ref, set, get, remove, onValue } from "@/lib/firebase"
 
 interface LocationData {
   latitude: number
