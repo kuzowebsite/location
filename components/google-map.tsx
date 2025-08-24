@@ -37,6 +37,7 @@ export default function GoogleMap({
   const [watchId, setWatchId] = useState<number | null>(null)
   const [isNavigating, setIsNavigating] = useState(false)
   const [currentUserLocation, setCurrentUserLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [routeInfo, setRouteInfo] = useState<{ duration: string; distance: string } | null>(null)
 
   useEffect(() => {
     const loadGoogleMaps = () => {
@@ -70,6 +71,30 @@ export default function GoogleMap({
         center: { lat: latitude, lng: longitude },
         zoom: 15,
         mapTypeId: window.google.maps.MapTypeId.ROADMAP,
+        styles: [
+          {
+            featureType: "all",
+            elementType: "geometry.fill",
+            stylers: [{ color: "#f5f5f5" }],
+          },
+          {
+            featureType: "road",
+            elementType: "geometry",
+            stylers: [{ color: "#ffffff" }],
+          },
+          {
+            featureType: "road",
+            elementType: "geometry.stroke",
+            stylers: [{ color: "#e0e0e0" }],
+          },
+        ],
+        disableDefaultUI: false,
+        zoomControl: true,
+        mapTypeControl: false,
+        scaleControl: false,
+        streetViewControl: false,
+        rotateControl: false,
+        fullscreenControl: true,
       })
 
       mapInstanceRef.current = map
@@ -78,6 +103,25 @@ export default function GoogleMap({
       const dirRenderer = new window.google.maps.DirectionsRenderer({
         draggable: false,
         suppressMarkers: false,
+        polylineOptions: {
+          strokeColor: "#1a73e8",
+          strokeWeight: 6,
+          strokeOpacity: 0.8,
+        },
+        markerOptions: {
+          icon: {
+            url:
+              "data:image/svg+xml;charset=UTF-8," +
+              encodeURIComponent(`
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="16" cy="16" r="12" fill="#ea4335" stroke="#ffffff" strokeWidth="3"/>
+                <circle cx="16" cy="16" r="6" fill="#ffffff"/>
+              </svg>
+            `),
+            scaledSize: new window.google.maps.Size(32, 32),
+            anchor: new window.google.maps.Point(16, 16),
+          },
+        },
       })
 
       setDirectionsService(dirService)
@@ -170,7 +214,6 @@ export default function GoogleMap({
     if (showDirections && directionsService && directionsRenderer && mapInstanceRef.current) {
       setIsNavigating(true)
 
-      // Start watching user's location
       if (navigator.geolocation) {
         const id = navigator.geolocation.watchPosition(
           (position) => {
@@ -181,7 +224,6 @@ export default function GoogleMap({
 
             setCurrentUserLocation(userLocation)
 
-            // Create or update user location marker
             if (userLocationMarker) {
               userLocationMarker.setPosition(userLocation)
             } else {
@@ -193,19 +235,19 @@ export default function GoogleMap({
                   url:
                     "data:image/svg+xml;charset=UTF-8," +
                     encodeURIComponent(`
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <circle cx="10" cy="10" r="8" fill="#1e40af" stroke="#ffffff" strokeWidth="2"/>
-                      <circle cx="10" cy="10" r="3" fill="#ffffff"/>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <circle cx="12" cy="12" r="10" fill="#1a73e8" stroke="#ffffff" strokeWidth="3"/>
+                      <circle cx="12" cy="12" r="4" fill="#ffffff"/>
                     </svg>
                   `),
-                  scaledSize: new window.google.maps.Size(20, 20),
+                  scaledSize: new window.google.maps.Size(24, 24),
+                  anchor: new window.google.maps.Point(12, 12),
                 },
                 zIndex: 1000,
               })
               setUserLocationMarker(marker)
             }
 
-            // Calculate and display directions
             const request = {
               origin: userLocation,
               destination: { lat: latitude, lng: longitude },
@@ -217,7 +259,13 @@ export default function GoogleMap({
                 directionsRenderer.setDirections(result)
                 directionsRenderer.setMap(mapInstanceRef.current)
 
-                // Auto-center map on user location
+                const route = result.routes[0]
+                const leg = route.legs[0]
+                setRouteInfo({
+                  duration: leg.duration.text,
+                  distance: leg.distance.text,
+                })
+
                 mapInstanceRef.current.setCenter(userLocation)
                 mapInstanceRef.current.setZoom(16)
               }
@@ -225,7 +273,6 @@ export default function GoogleMap({
           },
           (error) => {
             console.error("Geolocation error:", error)
-            // Fallback to default location
             const defaultLocation = { lat: 47.9184, lng: 106.9177 }
             setCurrentUserLocation(defaultLocation)
 
@@ -239,6 +286,13 @@ export default function GoogleMap({
               if (status === "OK") {
                 directionsRenderer.setDirections(result)
                 directionsRenderer.setMap(mapInstanceRef.current)
+
+                const route = result.routes[0]
+                const leg = route.legs[0]
+                setRouteInfo({
+                  duration: leg.duration.text,
+                  distance: leg.distance.text,
+                })
               }
             })
           },
@@ -252,8 +306,8 @@ export default function GoogleMap({
         setWatchId(id)
       }
     } else {
-      // Clean up when directions are disabled
       setIsNavigating(false)
+      setRouteInfo(null)
       if (watchId !== null) {
         navigator.geolocation.clearWatch(watchId)
         setWatchId(null)
@@ -267,7 +321,6 @@ export default function GoogleMap({
       }
     }
 
-    // Cleanup on unmount
     return () => {
       if (watchId !== null) {
         navigator.geolocation.clearWatch(watchId)
@@ -281,14 +334,26 @@ export default function GoogleMap({
         <div className="text-sm text-primary bg-primary/10 p-2 rounded">Газрын зураг дээр дарж байршил сонгоно уу</div>
       )}
 
-      {isNavigating && (
-        <div className="text-sm text-accent bg-accent/10 p-2 rounded flex items-center gap-2">
-          <div className="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
-          Чиглэл харуулж байна... Таны байршил шинэчлэгдэж байна
+      {isNavigating && routeInfo && (
+        <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="bg-blue-600 text-white px-3 py-1 rounded-full text-sm font-medium">
+              {routeInfo.duration}
+            </div>
+            <div className="text-gray-600 text-sm">{routeInfo.distance}</div>
+            <div className="flex items-center gap-1 text-blue-600 text-sm">
+              <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+              Чиглэл харуулж байна
+            </div>
+          </div>
         </div>
       )}
 
-      <div ref={mapRef} className={`w-full h-64 rounded-lg border ${className}`} style={{ minHeight: "256px" }} />
+      <div
+        ref={mapRef}
+        className={`w-full h-80 rounded-lg border shadow-sm ${className}`}
+        style={{ minHeight: "320px" }}
+      />
     </div>
   )
 }
