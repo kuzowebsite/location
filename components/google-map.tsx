@@ -33,6 +33,10 @@ export default function GoogleMap({
   const [interactiveMarker, setInteractiveMarker] = useState<any>(null)
   const [directionsService, setDirectionsService] = useState<any>(null)
   const [directionsRenderer, setDirectionsRenderer] = useState<any>(null)
+  const [userLocationMarker, setUserLocationMarker] = useState<any>(null)
+  const [watchId, setWatchId] = useState<number | null>(null)
+  const [isNavigating, setIsNavigating] = useState(false)
+  const [currentUserLocation, setCurrentUserLocation] = useState<{ lat: number; lng: number } | null>(null)
 
   useEffect(() => {
     const loadGoogleMaps = () => {
@@ -164,15 +168,44 @@ export default function GoogleMap({
 
   useEffect(() => {
     if (showDirections && directionsService && directionsRenderer && mapInstanceRef.current) {
-      // Get user's current location for directions
+      setIsNavigating(true)
+
+      // Start watching user's location
       if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
+        const id = navigator.geolocation.watchPosition(
           (position) => {
             const userLocation = {
               lat: position.coords.latitude,
               lng: position.coords.longitude,
             }
 
+            setCurrentUserLocation(userLocation)
+
+            // Create or update user location marker
+            if (userLocationMarker) {
+              userLocationMarker.setPosition(userLocation)
+            } else {
+              const marker = new window.google.maps.Marker({
+                position: userLocation,
+                map: mapInstanceRef.current,
+                title: "Таны байршил",
+                icon: {
+                  url:
+                    "data:image/svg+xml;charset=UTF-8," +
+                    encodeURIComponent(`
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <circle cx="10" cy="10" r="8" fill="#1e40af" stroke="#ffffff" strokeWidth="2"/>
+                      <circle cx="10" cy="10" r="3" fill="#ffffff"/>
+                    </svg>
+                  `),
+                  scaledSize: new window.google.maps.Size(20, 20),
+                },
+                zIndex: 1000,
+              })
+              setUserLocationMarker(marker)
+            }
+
+            // Calculate and display directions
             const request = {
               origin: userLocation,
               destination: { lat: latitude, lng: longitude },
@@ -183,12 +216,18 @@ export default function GoogleMap({
               if (status === "OK") {
                 directionsRenderer.setDirections(result)
                 directionsRenderer.setMap(mapInstanceRef.current)
+
+                // Auto-center map on user location
+                mapInstanceRef.current.setCenter(userLocation)
+                mapInstanceRef.current.setZoom(16)
               }
             })
           },
-          () => {
-            // If geolocation fails, show directions from a default location (Ulaanbaatar center)
+          (error) => {
+            console.error("Geolocation error:", error)
+            // Fallback to default location
             const defaultLocation = { lat: 47.9184, lng: 106.9177 }
+            setCurrentUserLocation(defaultLocation)
 
             const request = {
               origin: defaultLocation,
@@ -203,18 +242,50 @@ export default function GoogleMap({
               }
             })
           },
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 1000,
+          },
         )
+
+        setWatchId(id)
       }
-    } else if (directionsRenderer) {
-      // Clear directions when showDirections is false
-      directionsRenderer.setMap(null)
+    } else {
+      // Clean up when directions are disabled
+      setIsNavigating(false)
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId)
+        setWatchId(null)
+      }
+      if (userLocationMarker) {
+        userLocationMarker.setMap(null)
+        setUserLocationMarker(null)
+      }
+      if (directionsRenderer) {
+        directionsRenderer.setMap(null)
+      }
     }
-  }, [showDirections, directionsService, directionsRenderer, latitude, longitude])
+
+    // Cleanup on unmount
+    return () => {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId)
+      }
+    }
+  }, [showDirections, directionsService, directionsRenderer, latitude, longitude, userLocationMarker, watchId])
 
   return (
     <div className="space-y-2">
       {interactive && (
-        <div className="text-sm text-blue-600 bg-blue-50 p-2 rounded">Газрын зураг дээр дарж байршил сонгоно уу</div>
+        <div className="text-sm text-primary bg-primary/10 p-2 rounded">Газрын зураг дээр дарж байршил сонгоно уу</div>
+      )}
+
+      {isNavigating && (
+        <div className="text-sm text-accent bg-accent/10 p-2 rounded flex items-center gap-2">
+          <div className="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
+          Чиглэл харуулж байна... Таны байршил шинэчлэгдэж байна
+        </div>
       )}
 
       <div ref={mapRef} className={`w-full h-64 rounded-lg border ${className}`} style={{ minHeight: "256px" }} />
